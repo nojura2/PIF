@@ -1,0 +1,62 @@
+name: ${PROJECT_NAME:-pif}
+
+services:
+  web:
+    build:
+      context: ./docker/php
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.3}
+    container_name: ${PROJECT_NAME:-pif}-web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    volumes:
+      - ./www:/var/www/html                                   # Webseiten-Dateien (in VS Code bearbeiten)
+      - ./docker/php/php.ini:/usr/local/etc/php/conf.d/zz-custom.ini:ro
+      - ./docker/apache/000-default.conf:/etc/apache2/sites-available/000-default.conf:ro
+      - ./logs/apache:/var/log/apache2                        # Apache-Logs direkt im Projekt
+    environment:
+      DB_HOST: db
+      DB_USER: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"                   # für Xdebug unter Linux
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: mysql:${MYSQL_VERSION:-8.4}
+    container_name: ${PROJECT_NAME:-pif}-db
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      TZ: Europe/Luxembourg
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db_data:/var/lib/mysql                                # Datenbank-Daten (persistent, startet leer)
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  phpmyadmin:
+    image: phpmyadmin:5.2
+    container_name: ${PROJECT_NAME:-pif}-pma
+    ports:
+      - "${PMA_PORT:-8081}:80"
+    environment:
+      PMA_HOST: db
+      PMA_USER: root
+      PMA_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      UPLOAD_LIMIT: 128M
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db_data:
